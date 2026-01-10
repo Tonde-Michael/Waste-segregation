@@ -76,11 +76,28 @@
         .dumpsite-item { background:#f8f9fa; padding:.8rem; margin-bottom:.5rem; border-radius:8px; display:flex; justify-content:space-between; align-items:center; }
         .due-date-warning { background:#fff3cd; border-left:4px solid #ffc107; }
         .due-date-critical { background:#f8d7da; border-left:4px solid #dc3545; }
+        .status-badge { padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+        .status-full { background: #e3f2fd; color: #1976d2; }
+        .status-empty { background: #f5f5f5; color: #757575; }
+        .status-faulty { background: #ffebee; color: #d32f2f; }
         @media (max-width:768px) {
             .main-container { grid-template-columns:1fr; grid-template-rows:auto 1fr; }
             .sidebar { max-height:300px; }
             .data-stats { grid-template-columns: repeat(2, 1fr); }
         }
+        @media (max-width: 1200px) {
+            .main-container { grid-template-columns: 300px 1fr; }
+        }
+        @media (max-width: 992px) {
+            .main-container { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+            .sidebar { max-height: 400px; overflow-y: auto; }
+        }
+        /* Scrollbar styling */
+        .sidebar::-webkit-scrollbar { width: 6px; }
+        .sidebar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 3px; }
+        .sidebar::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 3px; }
+        .sidebar::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+        .file-upload-area:hover { background: #f0f7f0; transition: background 0.3s; }
     </style>
 </head>
 <body>
@@ -463,6 +480,23 @@
         updateStats();
         populateActiveTruckSelect();
         populateDumpsiteSelects();
+        
+        // Initialize dumpsites with a default one if empty
+        if (dumpsites.length === 0) {
+            dumpsites.push({
+                id: generateId('DMP'),
+                name: 'Main Dumpsite',
+                lat: 5.6037,
+                lng: -0.1870,
+                capacity: 100,
+                type: 'landfill',
+                createdAt: new Date().toISOString(),
+                currentUsage: 0
+            });
+            saveAllData();
+            loadDumpsites();
+            populateDumpsiteSelects();
+        }
     });
 
     function setupEventListeners() {
@@ -521,6 +555,56 @@
             } else {
                 document.getElementById('latitude').value = e.latlng.lat.toFixed(6);
                 document.getElementById('longitude').value = e.latlng.lng.toFixed(6);
+            }
+        });
+
+        // File upload area event listeners
+        document.getElementById('fileUploadArea').addEventListener('click', () => {
+            document.getElementById('excelFileInput').click();
+        });
+
+        document.getElementById('excelFileInput').addEventListener('change', function(e) {
+            selectedFile = e.target.files[0];
+            if (selectedFile) {
+                const previewDiv = document.getElementById('previewContent');
+                previewDiv.innerHTML = `
+                    <div class="alert alert-info">
+                        <i class="fas fa-file-excel"></i>
+                        <strong>File Selected:</strong> ${selectedFile.name}<br>
+                        <small>Size: ${(selectedFile.size / 1024).toFixed(2)} KB</small>
+                    </div>
+                `;
+                document.getElementById('filePreview').style.display = 'block';
+            }
+        });
+
+        document.getElementById('fileUploadArea').addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.currentTarget.style.borderColor = '#2e7d32';
+            e.currentTarget.style.background = '#f0f7f0';
+        });
+
+        document.getElementById('fileUploadArea').addEventListener('dragleave', (e) => {
+            e.currentTarget.style.borderColor = '#2e7d32';
+            e.currentTarget.style.background = '';
+        });
+
+        document.getElementById('fileUploadArea').addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.currentTarget.style.borderColor = '#2e7d32';
+            e.currentTarget.style.background = '';
+            
+            if (e.dataTransfer.files.length) {
+                selectedFile = e.dataTransfer.files[0];
+                const previewDiv = document.getElementById('previewContent');
+                previewDiv.innerHTML = `
+                    <div class="alert alert-info">
+                        <i class="fas fa-file-excel"></i>
+                        <strong>File Selected:</strong> ${selectedFile.name}<br>
+                        <small>Size: ${(selectedFile.size / 1024).toFixed(2)} KB</small>
+                    </div>
+                `;
+                document.getElementById('filePreview').style.display = 'block';
             }
         });
     }
@@ -639,12 +723,12 @@
         });
 
         const newBin = {
-            binId: formData.get('binId'),
-            ownerName: formData.get('ownerName'),
-            digitalAddress: formData.get('digitalAddress'),
-            phone: formData.get('contactPhone'),
-            location: formData.get('location'),
-            address: formData.get('location'),
+            binId: sanitizeInput(formData.get('binId')).substring(0, 50),
+            ownerName: sanitizeInput(formData.get('ownerName')).substring(0, 100),
+            digitalAddress: sanitizeInput(formData.get('digitalAddress')).substring(0, 50),
+            phone: sanitizeInput(formData.get('contactPhone')).substring(0, 20),
+            location: sanitizeInput(formData.get('location')).substring(0, 200),
+            address: sanitizeInput(formData.get('location')).substring(0, 200),
             latitude: parseFloat(formData.get('latitude')),
             longitude: parseFloat(formData.get('longitude')),
             binType: formData.get('binType'),
@@ -758,6 +842,64 @@
         };
     }
 
+    function editBin(index) {
+        const bin = bins[index];
+        if (!bin) return;
+        
+        // Populate form with bin data
+        document.getElementById('binId').value = bin.binId;
+        document.getElementById('ownerName').value = bin.ownerName || '';
+        document.getElementById('digitalAddress').value = bin.digitalAddress || '';
+        document.getElementById('location').value = bin.location || '';
+        document.getElementById('latitude').value = bin.latitude || '';
+        document.getElementById('longitude').value = bin.longitude || '';
+        document.getElementById('binType').value = bin.binType || 'residential';
+        document.getElementById('contactPhone').value = bin.phone || '';
+        document.getElementById('binStatus').value = bin.status || 'empty';
+        
+        // Handle segregation
+        const isSegCheck = document.getElementById('isSegregated');
+        isSegCheck.checked = bin.isSegregated || false;
+        document.getElementById('segregationOptions').style.display = bin.isSegregated ? 'block' : 'none';
+        
+        // Check waste types
+        if (bin.wasteTypes) {
+            document.querySelectorAll('input[name="wasteTypes"]').forEach(cb => {
+                cb.checked = bin.wasteTypes.includes(cb.value);
+            });
+        }
+        
+        // Remove old bin
+        bins.splice(index, 1);
+        excelData = excelData.filter(o => o.binId !== bin.binId);
+        
+        // Switch to bin management tab
+        document.querySelectorAll('.tab')[1].click();
+        showToast('Bin loaded for editing', 'info');
+    }
+
+    function markBinFull(index) {
+        if (index >= 0 && index < bins.length) {
+            bins[index].status = 'full';
+            saveAllData();
+            loadBins();
+            updateMapMarkers();
+            showToast('Bin marked as full', 'success');
+        }
+    }
+
+    function viewOnMap(index) {
+        const bin = bins[index];
+        if (bin && bin.latitude && bin.longitude) {
+            map.setView([bin.latitude, bin.longitude], 15);
+            markers.forEach(marker => {
+                if (marker.getLatLng().lat === bin.latitude && marker.getLatLng().lng === bin.longitude) {
+                    marker.openPopup();
+                }
+            });
+        }
+    }
+
     function updateMapMarkers() {
         // Clear existing markers
         markers.forEach(m => map.removeLayer(m));
@@ -862,7 +1004,7 @@
      ***********************/
     function addOrUpdateTruck() {
         const fd = new FormData(document.getElementById('truckForm'));
-        const truckId = fd.get('truckId').trim();
+        const truckId = sanitizeInput(fd.get('truckId')).trim().substring(0, 50);
         if (!truckId) { 
             showToast('Truck ID is required', 'error'); 
             return; 
@@ -871,7 +1013,7 @@
         const existing = trucks.find(t => t.truckId === truckId);
         const truckObj = {
             truckId,
-            driverName: fd.get('driverName'),
+            driverName: sanitizeInput(fd.get('driverName')).substring(0, 100),
             startLat: fd.get('truckStartLat') ? parseFloat(fd.get('truckStartLat')) : null,
             startLng: fd.get('truckStartLng') ? parseFloat(fd.get('truckStartLng')) : null,
             capacityBins: parseInt(fd.get('truckCapacity')) || 10,
@@ -927,6 +1069,46 @@
         container.innerHTML = html;
     }
 
+    function viewTruckOnMap(index) {
+        const truck = trucks[index];
+        if (truck && truck.startLat && truck.startLng) {
+            map.setView([truck.startLat, truck.startLng], 15);
+            markers.forEach(marker => {
+                if (marker.getLatLng().lat === truck.startLat && marker.getLatLng().lng === truck.startLng) {
+                    marker.openPopup();
+                }
+            });
+        }
+    }
+
+    function selectTruckForEdit(index) {
+        const truck = trucks[index];
+        if (!truck) return;
+        
+        document.getElementById('truckId').value = truck.truckId;
+        document.getElementById('driverName').value = truck.driverName || '';
+        document.getElementById('truckStartLat').value = truck.startLat || '';
+        document.getElementById('truckStartLng').value = truck.startLng || '';
+        document.getElementById('truckCapacity').value = truck.capacityBins || 10;
+        document.getElementById('truckFuelCapacity').value = truck.fuelCapacity || 100;
+        document.getElementById('truckFuelConsumption').value = truck.fuelConsumption || 3;
+        
+        // Switch to fleet tab
+        document.querySelectorAll('.tab')[2].click();
+        showToast('Truck loaded for editing', 'info');
+    }
+
+    function deleteTruck(index) {
+        if (confirm('Are you sure you want to delete this truck?')) {
+            trucks.splice(index, 1);
+            saveAllData();
+            loadTrucks();
+            updateMapMarkers();
+            populateActiveTruckSelect();
+            showToast('Truck deleted', 'success');
+        }
+    }
+
     function populateActiveTruckSelect() {
         const sel = document.getElementById('activeTruckSelect');
         sel.innerHTML = '<option value="">-- Select Truck --</option>';
@@ -946,7 +1128,7 @@
         
         const newDumpsite = {
             id: generateId('DMP'),
-            name: formData.get('newDumpsiteName'),
+            name: sanitizeInput(formData.get('newDumpsiteName')).substring(0, 100),
             lat: parseFloat(formData.get('newDumpsiteLat')),
             lng: parseFloat(formData.get('newDumpsiteLng')),
             capacity: parseInt(formData.get('dumpsiteCapacity')) || 100,
@@ -1003,6 +1185,29 @@
             </div>`;
         });
         container.innerHTML = html;
+    }
+
+    function viewDumpsiteOnMap(index) {
+        const dumpsite = dumpsites[index];
+        if (dumpsite) {
+            map.setView([dumpsite.lat, dumpsite.lng], 15);
+            markers.forEach(marker => {
+                if (marker.getLatLng().lat === dumpsite.lat && marker.getLatLng().lng === dumpsite.lng) {
+                    marker.openPopup();
+                }
+            });
+        }
+    }
+
+    function deleteDumpsite(index) {
+        if (confirm('Are you sure you want to delete this dumpsite?')) {
+            dumpsites.splice(index, 1);
+            saveAllData();
+            loadDumpsites();
+            updateMapMarkers();
+            populateDumpsiteSelects();
+            showToast('Dumpsite deleted', 'success');
+        }
     }
 
     function populateDumpsiteSelects() {
@@ -1556,6 +1761,25 @@
         cont.innerHTML = html;
     }
 
+    function recordPayment(binId) {
+        const binIndex = bins.findIndex(b => b.binId === binId);
+        const ownerIndex = excelData.findIndex(o => o.binId === binId);
+        
+        if (binIndex !== -1) {
+            bins[binIndex].paymentDue = 0;
+        }
+        
+        if (ownerIndex !== -1) {
+            excelData[ownerIndex].paymentDue = 0;
+        }
+        
+        saveAllData();
+        updatePaymentsList();
+        loadBins();
+        loadExcelData();
+        showToast('Payment recorded successfully', 'success');
+    }
+
     function displayOptimizationAnalysis(optimization, truck, visitedBins, dumpsite) {
         const container = document.getElementById('optimizationResults');
         const analysisDiv = document.getElementById('optimizationAnalysis');
@@ -1670,7 +1894,148 @@
         }
     }
 
-    // Remaining utility functions (drawRoadRoute, clearRoute, etc.)
+    function sanitizeInput(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    /***********************
+     * Modal Functions
+     ***********************/
+    function showExcelImportModal() {
+        document.getElementById('excelImportModal').style.display = 'block';
+    }
+
+    function closeModal(modalId) {
+        document.getElementById(modalId).style.display = 'none';
+        document.getElementById('filePreview').style.display = 'none';
+        selectedFile = null;
+    }
+
+    function cancelImport() {
+        closeModal('excelImportModal');
+    }
+
+    /***********************
+     * Template Download
+     ***********************/
+    function downloadSampleTemplate() {
+        const wb = XLSX.utils.book_new();
+        
+        // Sample data for template
+        const sampleData = [
+            {
+                'Bin ID': 'BIN-001',
+                'Owner Name': 'John Doe',
+                'Digital Address': 'GA-123-456',
+                'Phone': '+233-123-4567',
+                'Location': 'Accra Central',
+                'Latitude': 5.6037,
+                'Longitude': -0.1870,
+                'Bin Type': 'residential',
+                'Is Segregated': 'No',
+                'Waste Types': '',
+                'Status': 'empty',
+                'Pickup Count': 0,
+                'Payment Due': 0,
+                'Last Pickup Date': ''
+            }
+        ];
+        
+        const ws = XLSX.utils.json_to_sheet(sampleData);
+        XLSX.utils.book_append_sheet(wb, ws, 'Template');
+        XLSX.writeFile(wb, 'waste_management_template.xlsx');
+        showToast('Template downloaded successfully', 'success');
+    }
+
+    /***********************
+     * Excel Data Loading
+     ***********************/
+    function loadExcelData() {
+        const preview = document.getElementById('excelPreview');
+        if (excelData.length === 0) {
+            preview.innerHTML = `
+                <div style="text-align:center; padding:2rem; color:#666;">
+                    <i class="fas fa-file-excel" style="font-size:3rem; margin-bottom:1rem;"></i>
+                    <p>No data loaded</p>
+                    <p style="font-size:.9rem;">Import your data file to view information</p>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = `
+            <table class="excel-data-table">
+                <thead>
+                    <tr>
+                        <th>Owner</th>
+                        <th>Bin ID</th>
+                        <th>Address</th>
+                        <th>Type</th>
+                        <th>Pickups</th>
+                        <th>Due</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+        
+        excelData.slice(0, 10).forEach(owner => {
+            const bin = bins.find(b => b.binId === owner.binId);
+            html += `
+                <tr>
+                    <td>${owner.ownerName || 'N/A'}</td>
+                    <td>${owner.binId || 'N/A'}</td>
+                    <td>${owner.digitalAddress || 'N/A'}</td>
+                    <td>${bin?.binType || 'N/A'} ${bin?.isSegregated ? '<span class="segregation-badge"><i class="fas fa-recycle"></i></span>' : ''}</td>
+                    <td>${owner.pickupCount || 0}</td>
+                    <td>GH₵${(owner.paymentDue || 0).toFixed(2)}</td>
+                </tr>
+            `;
+        });
+        
+        html += `</tbody></table>`;
+        
+        if (excelData.length > 10) {
+            html += `<div style="text-align:center; padding:1rem; color:#666;">
+                Showing 10 of ${excelData.length} records
+            </div>`;
+        }
+        
+        preview.innerHTML = html;
+    }
+
+    /***********************
+     * Render selectable bins list
+     ***********************/
+    function renderSelectableBinsList() {
+        const container = document.getElementById('selectBinsContainer');
+        let html = '';
+        
+        bins.forEach((bin, index) => {
+            if (bin.status === 'full') {
+                const segBadge = bin.isSegregated ? 
+                    '<span class="segregation-badge" style="margin-left:5px;"><i class="fas fa-recycle"></i></span>' : '';
+                
+                html += `
+                    <label style="display:block; margin-bottom:0.25rem;">
+                        <input type="checkbox" value="${bin.binId}" style="margin-right:5px;">
+                        ${bin.binId} ${segBadge} - ${bin.binType} (${bin.ownerName || 'No owner'})
+                    </label>
+                `;
+            }
+        });
+        
+        if (!html) {
+            html = '<div style="color:#666; padding:0.5rem; text-align:center;">No full bins available</div>';
+        }
+        
+        container.innerHTML = html;
+    }
+
+    /***********************
+     * Route Drawing Functions
+     ***********************/
     async function drawRoadRoute(points) {
         if (routeLayer) map.removeLayer(routeLayer);
         routeMarkers.forEach(marker => map.removeLayer(marker));
@@ -1751,6 +2116,23 @@
         document.getElementById('optimizationAnalysis').style.display = 'none';
     }
 
+    // Performance optimization for map updates
+    let updateTimeout;
+    function scheduleMapUpdate() {
+        clearTimeout(updateTimeout);
+        updateTimeout = setTimeout(() => {
+            updateMapMarkers();
+        }, 500);
+    }
+
+    // Tab switching
+    function switchTab(tabName, button) {
+        document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+        button.classList.add('active');
+        document.getElementById(tabName + 'Tab').classList.add('active');
+    }
+
     // Initialize the application
     setTimeout(() => {
         console.log('Smart Waste Management System initialized');
@@ -1762,14 +2144,6 @@
             persistentStorage: '✅'
         });
     }, 2000);
-
-    // Tab switching
-    function switchTab(tabName, button) {
-        document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-        button.classList.add('active');
-        document.getElementById(tabName + 'Tab').classList.add('active');
-    }
     </script>
 </body>
 </html>
